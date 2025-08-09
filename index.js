@@ -12,7 +12,7 @@ const fs = require('fs');
 const app = express();
 app.use(express.json());
 const port = process.env.PORT || 3000;
-const appsScriptWebAppUrl = "https://script.google.com/macros/s/AKfycbyYiTMMlIlnLR2Uf2Wd4AS4MHppgqALN85d25gAKTFMPTEPPYHaHA_PQ4ytmgL3ImAg/exec";
+const appsScriptWebAppUrl = "https://script.google.com/macros/s/AKfycbzQ9f3FNWc6ebSaKTM-APdDApSSTPUFeMCuhzHt1jTY70UyJVszI-7S1PyTtkl2g-JP/exec";
 
 //==========================================
 
