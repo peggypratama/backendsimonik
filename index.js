@@ -17,7 +17,7 @@ const appsScriptWebAppUrl = "https://script.google.com/macros/s/AKfycbzQ9f3FNWc6
 //==========================================
 
 // Load credentials from the downloaded JSON file
-const credentials = require('./client_secret_37179113405-posa9o1dl97bi75m6c3dgm79fatal6vo.apps.googleusercontent.com.json');
+const credentials = require('./credential.json');
 const { client_secret, client_id, redirect_uris } = credentials.web;
 
 const oAuth2Client = new google.auth.OAuth2(
