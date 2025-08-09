@@ -4,4 +4,4 @@ uploads
 npm-debug.log
 .env
 .DS_Store
-credential.json
+# credential.json
