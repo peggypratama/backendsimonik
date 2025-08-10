@@ -166,7 +166,7 @@ app.get('/oauth2callback', async (req, res) => {
 
 
 async function findOrCreateFolder(folderName, parentId = null) {
-  const drive = google.drive({ version: 'v3', auth });
+  const drive = google.drive({ version: 'v3', auth: oAuth2Client });
 
   // 1. Buat query pencarian
   let query = `name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
@@ -215,7 +215,7 @@ async function findOrCreateFolder(folderName, parentId = null) {
  */
 async function deleteFileFromDrive(fileId) {
   try {
-    const drive = google.drive({ version: 'v3', auth });
+    const drive = google.drive({ version: 'v3', agent : oAuth2Client });
 
     await drive.files.delete({
       fileId: fileId,
