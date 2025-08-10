@@ -27,7 +27,7 @@ const appsScriptWebAppUrl = "https://script.google.com/macros/s/AKfycbzQ9f3FNWc6
 const client_id = process.env.GOOGLE_CLIENT_ID;
 const client_secret = process.env.GOOGLE_CLIENT_SECRET;
 const redirect_uri = process.env.GOOGLE_REDIRECT_URI;
-const redirect_uri2 = process.env.GOOGLE_REDIRECT_URI2;
+// const redirect_uri2 = process.env.GOOGLE_REDIRECT_URI2;
 
 const oAuth2Client = new google.auth.OAuth2(
   client_id,
