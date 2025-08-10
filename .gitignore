@@ -6,8 +6,8 @@ yarn-debug.log*
 yarn-error.log*
 
 # dependencies
-node_modules/
-uploads/
+node_modules
+uploads
 
 # Environment variables
 .env
