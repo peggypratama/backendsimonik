@@ -6,6 +6,9 @@ const { google } = require('googleapis');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const dotenv = require('dotenv'); // Import dotenv
+dotenv.config(); // Panggil .config() di awal file
+
 
 //========================================
 
@@ -17,13 +20,20 @@ const appsScriptWebAppUrl = "https://script.google.com/macros/s/AKfycbzQ9f3FNWc6
 //==========================================
 
 // Load credentials from the downloaded JSON file
-const credentials = require('./credential.json');
-const { client_secret, client_id, redirect_uris } = credentials.web;
+// const credentials = require('./credential.json');
+// const { client_secret, client_id, redirect_uris } = credentials.web;
+
+// Ambil kredensial dari environment variables
+const client_id = process.env.GOOGLE_CLIENT_ID;
+const client_secret = process.env.GOOGLE_CLIENT_SECRET;
+const redirect_uri = process.env.GOOGLE_REDIRECT_URI;
+const redirect_uri2 = process.env.GOOGLE_REDIRECT_URI2;
 
 const oAuth2Client = new google.auth.OAuth2(
   client_id,
   client_secret,
-  redirect_uris[0]
+  redirect_uri,
+  // redirect_uri2
 );
 
 const SCOPES = ['https://www.googleapis.com/auth/drive'];

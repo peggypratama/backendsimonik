@@ -1,7 +1,15 @@
-node_modules
-build
-uploads
-npm-debug.log
+# .gitignore
+
+# Log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# dependencies
+node_modules/
+
+# Environment variables
 .env
-.DS_Store
-# credential.json
+
+#credential
+credential.json
