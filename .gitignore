@@ -2,8 +2,8 @@ node_modules
 build
 npm-debug.log
 .DS_Store
-/uploads
-/tmp
+# /uploads
+# /tmp
 uploads/
 # .gitignore
 
