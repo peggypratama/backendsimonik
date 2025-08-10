@@ -38,7 +38,7 @@ const oAuth2Client = new google.auth.OAuth2(
 
 const SCOPES = ['https://www.googleapis.com/auth/drive'];
 
-const tempDir = path.join('./tmp', 'uploads');
+const tempDir = path.join('/tmp', 'uploads');
 
 // Pastikan direktori /tmp/uploads sudah ada
 if (!fs.existsSync(tempDir)) {
@@ -47,17 +47,16 @@ if (!fs.existsSync(tempDir)) {
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    // Pastikan direktori tujuan ada
-    if (!fs.existsSync(tempDir)) {
-      // Gunakan recursive: true untuk membuat folder induk
-      fs.mkdirSync(tempDir, { recursive: true });
-    }
+    // Dengan `recursive: true`, direktori 'uploads' akan dibuat secara otomatis
+    // di dalam '/tmp' jika belum ada.
+    fs.mkdirSync(tempDir, { recursive: true });
     cb(null, tempDir);
   },
   filename: (req, file, cb) => {
     cb(null, `${Date.now()}-${file.originalname}`);
   }
 });
+
 
 const upload = multer({ storage: storage });
 
