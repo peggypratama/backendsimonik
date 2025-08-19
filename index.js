@@ -7,15 +7,17 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const dotenv = require('dotenv'); // Import dotenv
+const { file } = require('googleapis/build/src/apis/file');
 dotenv.config(); // Panggil .config() di awal file
 
 
 //========================================
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 const port = process.env.PORT || 3000;
-const appsScriptWebAppUrl = "https://script.google.com/macros/s/AKfycbzQ9f3FNWc6ebSaKTM-APdDApSSTPUFeMCuhzHt1jTY70UyJVszI-7S1PyTtkl2g-JP/exec";
+const appsScriptWebAppUrl = "https://script.google.com/macros/s/AKfycbwxVsRY1Dgo_jQ24bhvqChVZaqQ5yrU2TmG1OQNX1i7R0cIBa9n7dUYcLZipZKNl5cu/exec";
 
 //==========================================
 
@@ -79,83 +81,54 @@ app.use(cors(corsOptions)) // Use this after the variable declaration
 //============================================================================================
 //============================================================================================
 
-app.post('/login', (req, res) => {
-  // console.log(req.body['username']);
-  // console.log(req.body['password']);
-  // console.log(req.params);
+app.post('/login', async (req, res) => {
 
-  axios.get(appsScriptWebAppUrl + "?operation=CHECKUSER&username=" + req.body['username'] + "&password=" + req.body['password'])
-    .then(response => {
-      const authorizeUrl = oAuth2Client.generateAuthUrl({
-        access_type: 'offline',
-        scope: SCOPES,
-        prompt: 'consent',
-        // state: req.query.param
-      });
-
-      console.log('Response from Apps Script:', response.data);
-      response.data.authorizeUrl = authorizeUrl;
-      res.send(response.data);
-      // res.redirect(`/auth?param=${JSON.stringify(response.data)}`)
-    })
-    .catch(error => {
-      console.error('Error making GET request:', error);
-      res.send(JSON.parse({ "responseCode": "99", "responseMessage": error }))
+  try {
+    const authorizeUrl = oAuth2Client.generateAuthUrl({
+      access_type: 'offline',
+      scope: SCOPES,
+      prompt: 'consent',
+      // state: req.query.param
     });
+
+    const response = await axios.get(appsScriptWebAppUrl, {
+      // Data yang dikirim sebagai query string (?nama=Alice)
+      params: {
+        operation: "CHECKUSER",
+        username: req.body['username'],
+        password: req.body['password']
+      },
+    });
+    response.data.authorizeUrl = authorizeUrl;
+    res.send(response.data);
+  } catch (error) {
+    res.json({
+      "responseCode": "99",
+      "responseMessage": error.message // Gunakan error.message untuk pesan yang lebih baik
+    });
+  }
 });
 
 app.get('/auth', (req, res) => {
-  console.log(`/auth ${req.query.param}`)
   const authorizeUrl = oAuth2Client.generateAuthUrl({
     access_type: 'offline',
     scope: SCOPES,
     prompt: 'consent',
     // state: req.query.param
   });
-
-  console.log(authorizeUrl)
   res.redirect(authorizeUrl);
 
 });
 
 app.get('/oauth2callback', async (req, res) => {
-  console.log("Masuk Sini")
   const { code } = req.query;
   const { tokens } = await oAuth2Client.getToken(code);
   oAuth2Client.setCredentials(tokens);
-  res.send('Autentikasi berhasil! Anda sekarang dapat mengunggah file.');
+  // res.send('Autentikasi berhasil! Anda sekarang dapat mengunggah file.');
+  res.redirect("https://simonik.appwrite.network")
 });
 
 //==================================================================================
-/**
- * Mencari folder di Google Drive berdasarkan nama.
- * Jika tidak ditemukan, akan dibuat.
- * @param {string} folderName Nama folder yang ingin dicari/dibuat.
- * @returns {string} ID folder.
- */
-
-/* async function findOrCreateFolder(drive, folderName) {
-  const q = `name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
-  const res = await drive.files.list({
-    q: q,
-    fields: 'files(id)',
-  });
-
-  if (res.data.files.length > 0) {
-    return res.data.files[0].id;
-  } else {
-    const fileMetadata = {
-      name: folderName,
-      mimeType: 'application/vnd.google-apps.folder',
-    };
-    const newFolder = await drive.files.create({
-      resource: fileMetadata,
-      fields: 'id',
-    });
-    return newFolder.data.id;
-  }
-} */
-
 /**
  * Mencari atau membuat folder di Google Drive.
  * @param {string} folderName Nama folder yang ingin dibuat atau dicari.
@@ -182,7 +155,7 @@ async function findOrCreateFolder(folderName, parentId = null) {
   // Jika folder ditemukan, kembalikan ID-nya
   if (searchResponse.data.files.length > 0) {
     const existingFolder = searchResponse.data.files[0];
-    console.log(`Folder '${existingFolder.name}' sudah ada. Menggunakan ID: ${existingFolder.id}`);
+    // console.log(`Folder '${existingFolder.name}' sudah ada. Menggunakan ID: ${existingFolder.id}`);
     return existingFolder;
   }
 
@@ -199,7 +172,7 @@ async function findOrCreateFolder(folderName, parentId = null) {
       resource: fileMetadata,
       fields: 'id, name',
     });
-    console.log(`Folder '${createResponse.data.name}' berhasil dibuat dengan ID: ${createResponse.data.id}`);
+    // console.log(`Folder '${createResponse.data.name}' berhasil dibuat dengan ID: ${createResponse.data.id}`);
     return createResponse.data;
   } catch (error) {
     console.error('Terjadi error saat membuat folder:', error);
@@ -207,20 +180,23 @@ async function findOrCreateFolder(folderName, parentId = null) {
   }
 }
 
-
 /**
  * Menghapus file dari Google Drive berdasarkan ID.
  * @param {string} fileId ID file yang ingin dihapus.
  */
 async function deleteFileFromDrive(fileId) {
+  if (!oAuth2Client.credentials.access_token) {
+    throw new Error("11");
+  }
+
   try {
-    const drive = google.drive({ version: 'v3', agent : oAuth2Client });
+    const drive = google.drive({ version: 'v3', auth: oAuth2Client });
 
     await drive.files.delete({
       fileId: fileId,
     });
 
-    console.log(`File dengan ID: ${fileId} berhasil dihapus.`);
+    // console.log(`File dengan ID: ${fileId} berhasil dihapus.`);
     return true;
   } catch (error) {
     console.error('Terjadi error saat menghapus file:', error);
@@ -230,7 +206,7 @@ async function deleteFileFromDrive(fileId) {
 
 async function uploadFileToDrive(file, fileName, folderId) {
   if (!oAuth2Client.credentials.access_token) {
-    return res.status(401).send('Akses tidak terotentikasi. Silakan otentikasi melalui /auth terlebih dahulu.');
+    throw new Error("11");
   }
 
   const drive = google.drive({ version: 'v3', auth: oAuth2Client });
@@ -240,6 +216,7 @@ async function uploadFileToDrive(file, fileName, folderId) {
     name: fileName,
     parents: [folderId],
   };
+
   const media = {
     mimeType: file.mimetype,
     body: fs.createReadStream(file.path),
@@ -249,7 +226,7 @@ async function uploadFileToDrive(file, fileName, folderId) {
   const response = await drive.files.create({
     resource: fileMetadata,
     media: media,
-    fields: 'id, webViewLink', // Meminta webViewLink
+    fields: 'id, name, webViewLink', // Meminta webViewLink
   });
   const fileId = response.data.id;
   // const fileLink = response.data.webViewLink;
@@ -267,268 +244,802 @@ async function uploadFileToDrive(file, fileName, folderId) {
   return response.data;
 }
 
+/**
+ * Menghapus banyak file dari Google Drive berdasarkan array ID.
+ * @param {string[]} fileIds Array ID file yang ingin dihapus.
+ */
+
+async function deleteMultipleFilesFromDrive(fileIds) {
+  if (!oAuth2Client.credentials.access_token) {
+    throw new Error("11");
+  }
+
+  try {
+    const drive = google.drive({ version: 'v3', auth: oAuth2Client });
+
+    const deletePromises = fileIds.map(fileId =>
+      drive.files.delete({ fileId: fileId })
+    );
+
+    // await Promise.all(deletePromises);
+    // console.log(`${fileIds.length} file berhasil dihapus.`);
+    return true; // <<< Mengembalikan true jika sukses
+  } catch (error) {
+    // console.error('Terjadi error saat menghapus file:', error.message);
+    return false; // <<< Mengembalikan false jika ada kesalahan
+  }
+}
+
+// Multiple File
+async function uploadFilesToDrive(files, folderId, namaFile) {
+  if (!oAuth2Client.credentials.access_token) {
+    throw new Error("11");
+  }
+
+  const drive = google.drive({ version: 'v3', auth: oAuth2Client });
+  const uploadPromises = files.map((file, index) => {
+
+    const newFileName = `${namaFile}-${index + 1}${path.extname(file.originalname)}`;
+
+    const fileMetadata = {
+      name: newFileName,
+      parents: [folderId], // Tambahkan jika ingin di folder tertentu
+    };
+    const media = {
+      mimeType: file.mimetype,
+      body: fs.createReadStream(file.path),
+    };
+    return drive.files.create({
+      resource: fileMetadata,
+      media: media,
+      fields: 'id, name, webViewLink',
+    });
+  });
+
+  // Menunggu semua proses upload selesai secara bersamaan
+  const responses = await Promise.all(uploadPromises);
+  return responses.map(res => res.data);
+}
+
+//========================================
+//                 TESING
+//========================================
+app.post('/upload-multiple', upload.array('files'), async (req, res) => {
+
+  if (!req.files || req.files.length === 0) {
+    return res.status(400).send('Tidak ada file yang diunggah.');
+  }
+
+
+  try {
+
+    // 1. folder utama
+    const mainFolder = await findOrCreateFolder('FOTO');
+    const mainFolderId = mainFolder.id;
+
+
+    const driveResponse = await uploadFilesToDrive(req.files, mainFolderId);
+
+    req.files.forEach(file => fs.unlinkSync(file.path));
+
+    const uploadedFilesData = driveResponse.map(res => ({
+      id: res.id,
+      name: res.name, // <<-- Nama file dikembalikan dari respons Google Drive
+      link: res.webViewLink
+    }));
+
+    res.status(200).json({
+      message: `${driveResponse.length} file berhasil diunggah!`,
+      uploadedFiles: uploadedFilesData, // Kirim array ini sebagai respons
+    })
+
+  } catch (error) {
+    console.error('Error:', error);
+    res.json({
+      "responseCode": "99",
+      "responseMessage": error.message // Gunakan error.message untuk pesan yang lebih baik
+    });
+  }
+});
+
+// --- Endpoint API baru untuk menghapus banyak file ---
+app.post('/delete-multiple', async (req, res) => {
+  const { fileIds } = req.body;
+  try {
+    if (!fileIds || !Array.isArray(fileIds) || fileIds.length === 0) {
+      return res.status(400).json({ error: 'Array ID file tidak valid.' });
+    }
+
+    // --- Gunakan nilai kembalian dari fungsi ---
+    const isSuccess = await deleteMultipleFilesFromDrive(fileIds);
+
+    if (isSuccess) {
+      res.status(200).json({ message: `${fileIds.length} file berhasil dihapus.` });
+    } else {
+      // Tangani kasus gagal di sini
+      res.status(500).json({ error: 'Gagal menghapus file.' });
+    }
+  } catch (error) {
+    // Respons khusus untuk error kredensial
+    if (error.message === "11") {
+      return res.json({
+        "responseCode": "11",
+        "responseMessage": "Silahkan Login Ulang" // Gunakan error.message untuk pesan yang lebih baik
+      });
+    }
+
+    return res.json({
+      "responseCode": "99",
+      "responseMessage": error.message // Gunakan error.message untuk pesan yang lebih baik
+    });
+  }
+});
 //========================================
 //                 LOKASI
 //========================================
 
-app.get('/get_lokasi', (req, res) => {
-  let config = {
-    method: 'get',
-    maxBodyLength: Infinity,
-    url: appsScriptWebAppUrl + "?operation=GETLOKASI",
-    headers: {}
-  };
-
-  axios.request(config)
-    .then(response => {
-      console.log('Response from Apps Script:', response.data);
-
-      res.header('Access-Control-Allow-Credentials', true);
-
-      res.send(response.data);
-    })
-    .catch(error => {
-      console.error('Error making GET request:', error);
-      res.header('Access-Control-Allow-Credentials', true);
-
-      res.send(JSON.parse({ "responseCode": "99", "responseMessage": error }))
+app.get('/get_lokasi', async (req, res) => {
+  try {
+    const response = await axios.get(appsScriptWebAppUrl, {
+      // Data yang dikirim sebagai query string (?nama=Alice)
+      params: {
+        operation: "GETLOKASI",
+      },
     });
+    res.send(response.data);
+  } catch {
+    res.json({
+      "responseCode": "99",
+      "responseMessage": error.message // Gunakan error.message untuk pesan yang lebih baik
+    });
+  }
 });
 
-app.post('/set_lokasi', (req, res) => {
-  axios.post(appsScriptWebAppUrl + "?operation=SETLOKASI", req.body, {
-    headers: {
-      'Content-Type': 'application/json'
-    }
-  })
-    .then(response => {
-      console.log('Success:', response.data);
-
-      res.send(response.data);
-
-    })
-    .catch(error => {
-      console.error('Error:', error);
-      res.send(JSON.parse({ "responseCode": "99", "responseMessage": error }))
+app.post('/set_lokasi', async (req, res) => {
+  try {
+    const response = await axios.post(appsScriptWebAppUrl, req.body, {
+      headers: {
+        'Content-Type': 'application/json', // Opsional, tapi praktik yang baik
+      },
+      params: {
+        operation: "SETLOKASI",
+      },
     });
+    res.send(response.data);
+  } catch (error) {
+    res.json({
+      "responseCode": "99",
+      "responseMessage": error.message // Gunakan error.message untuk pesan yang lebih baik
+    });
+  }
 });
 
-app.post('/del_lokasi', (req, res) => {
-  axios.post(appsScriptWebAppUrl + "?operation=DELLOKASI", req.body, {
-    headers: {
-      'Content-Type': 'application/json'
-    }
-  })
-    .then(response => {
-      console.log('Success:', response.data);
-
-      res.send(response.data);
-
-    })
-    .catch(error => {
-      console.error('Error:', error);
-      res.send(JSON.parse({ "responseCode": "99", "responseMessage": error }))
+app.post('/del_lokasi', async (req, res) => {
+  try {
+    const response = await axios.post(appsScriptWebAppUrl, req.body, {
+      headers: {
+        'Content-Type': 'application/json', // Opsional, tapi praktik yang baik
+      },
+      params: {
+        operation: "DELLOKASI",
+      },
     });
+    res.send(response.data);
+  } catch (error) {
+    res.json({
+      "responseCode": "99",
+      "responseMessage": error.message // Gunakan error.message untuk pesan yang lebih baik
+    });
+  }
 });
 
-app.post('/edit_lokasi', (req, res) => {
-  axios.post(appsScriptWebAppUrl + "?operation=EDITLOKASI", req.body, {
-    headers: {
-      'Content-Type': 'application/json'
-    }
-  })
-    .then(response => {
-      console.log('Success:', response.data);
-
-      res.send(response.data);
-
-    })
-    .catch(error => {
-      console.error('Error:', error);
-      res.send(JSON.parse({ "responseCode": "99", "responseMessage": error }))
+app.post('/edit_lokasi', async (req, res) => {
+  try {
+    const response = await axios.post(appsScriptWebAppUrl, req.body, {
+      headers: {
+        'Content-Type': 'application/json', // Opsional, tapi praktik yang baik
+      },
+      params: {
+        operation: "EDITLOKASI",
+      },
     });
+    res.send(response.data);
+  } catch (error) {
+    res.json({
+      "responseCode": "99",
+      "responseMessage": error.message // Gunakan error.message untuk pesan yang lebih baik
+    });
+  }
 });
 
 //========================================
 //            USER
 //========================================
 
-app.get('/get_user', (req, res) => {
-  let config = {
-    method: 'get',
-    maxBodyLength: Infinity,
-    url: appsScriptWebAppUrl + "?operation=GETUSER",
-    headers: {}
-  };
-
-  axios.request(config)
-    .then(response => {
-      console.log('Response from Apps Script:', response.data);
-
-      res.header('Access-Control-Allow-Credentials', true);
-
-      res.send(response.data);
-    })
-    .catch(error => {
-      console.error('Error making GET request:', error);
-      res.header('Access-Control-Allow-Credentials', true);
-
-      res.send(JSON.parse({ "responseCode": "99", "responseMessage": error }))
+app.get('/get_user', async (req, res) => {
+  try {
+    const response = await axios.get(appsScriptWebAppUrl, {
+      // Data yang dikirim sebagai query string (?nama=Alice)
+      params: {
+        operation: "GETUSER",
+      },
     });
+    res.send(response.data);
+  } catch {
+    res.json({
+      "responseCode": "99",
+      "responseMessage": error.message // Gunakan error.message untuk pesan yang lebih baik
+    });
+  }
 });
 
-app.post('/set_user', (req, res) => {
-  axios.post(appsScriptWebAppUrl + "?operation=SETUSER", req.body, {
-    headers: {
-      'Content-Type': 'application/json'
-    }
-  })
-    .then(response => {
-      console.log('Success:', response.data);
-
-      res.send(response.data);
-
-    })
-    .catch(error => {
-      console.error('Error:', error);
-      res.send(JSON.parse({ "responseCode": "99", "responseMessage": error }))
+app.post('/set_user', async (req, res) => {
+  try {
+    const response = await axios.post(appsScriptWebAppUrl, req.body, {
+      headers: {
+        'Content-Type': 'application/json', // Opsional, tapi praktik yang baik
+      },
+      params: {
+        operation: "SETUSER",
+      },
     });
+    res.send(response.data);
+  } catch (error) {
+    res.json({
+      "responseCode": "99",
+      "responseMessage": error.message // Gunakan error.message untuk pesan yang lebih baik
+    });
+  }
 });
 
-app.post('/del_user', (req, res) => {
-  axios.post(appsScriptWebAppUrl + "?operation=DELUSER", req.body, {
-    headers: {
-      'Content-Type': 'application/json'
-    }
-  })
-    .then(response => {
-      console.log('Success:', response.data);
-
-      res.send(response.data);
-
-    })
-    .catch(error => {
-      console.error('Error:', error);
-      res.send(JSON.parse({ "responseCode": "99", "responseMessage": error }))
+app.post('/del_user', async (req, res) => {
+  try {
+    const response = await axios.post(appsScriptWebAppUrl, req.body, {
+      headers: {
+        'Content-Type': 'application/json', // Opsional, tapi praktik yang baik
+      },
+      params: {
+        operation: "DELUSER",
+      },
     });
+    res.send(response.data);
+  } catch (error) {
+    res.json({
+      "responseCode": "99",
+      "responseMessage": error.message // Gunakan error.message untuk pesan yang lebih baik
+    });
+  }
 });
 
 //========================================
 //            BERITA ACARA
 //========================================
 
+// app.get('/get_berita_acara', async (req, res) => {
+//   try {
+//     const response = await axios.get(appsScriptWebAppUrl, {
+//       // Data yang dikirim sebagai query string (?nama=Alice)
+//       params: {
+//         operation: "GETBERITAACARA",
+//       },
+//     });
+//     res.send(response.data);
+//   } catch {
+//     res.json({
+//       "responseCode": "99",
+//       "responseMessage": error.message // Gunakan error.message untuk pesan yang lebih baik
+//     });
+//   }
+// });
+
+app.post('/get_berita_acara', async (req, res) => {
+  try {
+    const response = await axios.post(appsScriptWebAppUrl, req.body, {
+      headers: {
+        'Content-Type': 'application/json', // Opsional, tapi praktik yang baik
+      },
+      params: {
+        operation: "GETBERITAACARA",
+      },
+    });
+    res.send(response.data);
+  } catch (error) {
+    res.json({
+      "responseCode": "99",
+      "responseMessage": error.message // Gunakan error.message untuk pesan yang lebih baik
+    });
+
+  }
+});
 
 app.post('/set_berita_acara', upload.single('file'), async (req, res) => {
   if (!req.file) {
-    return res.status(400).send('Tidak ada file yang diunggah.');
+    res.json({
+      "responseCode": "99",
+      "responseMessage": "Tidak Ada File yang di upload" // Gunakan error.message untuk pesan yang lebih baik
+    });
   }
 
   try {
     const metadataString = req.body.metadata;
-    console.log(metadataString);
 
     // 1. folder utama
     const mainFolder = await findOrCreateFolder('BERITA ACARA');
     const mainFolderId = mainFolder.id;
 
     // 2. sub-folder di dalam folder utama
-    const subFolder = await findOrCreateFolder(metadataString.jenisBeritaAcara, mainFolderId);
+    const subFolder = await findOrCreateFolder(metadataString.lokasi, mainFolderId);
     const subFolderId = subFolder.id;
 
 
     // 3. sub-sub-folder di dalam sub folder
-    const subSubFolder = await findOrCreateFolder(metadataString.lokasi, subFolderId);
+    const subSubFolder = await findOrCreateFolder(metadataString.jenisBeritaAcara, subFolderId);
     const subSubFolderId = subSubFolder.id;
 
 
     const driveResponse = await uploadFileToDrive(req.file, metadataString.fileName, subSubFolderId);
-    const fileName = driveResponse.originalname;
-    console.log(`File Name ${fileName}`)
+    fs.unlinkSync(req.file.path);
+    const fileName = driveResponse.name;
+    
     const fileLink = driveResponse.webViewLink;
     const fileId = driveResponse.id;
 
-    // metadataString.fileName = fileName;
+    metadataString.namaFile = fileName;
     metadataString.fileLink = fileLink;
     metadataString.fileId = fileId;
 
     //Upload dlu ke sheet
 
-    console.log(metadataString);
     //------
-    axios.post(appsScriptWebAppUrl + "?operation=SETBERITAACARA", metadataString, {
+    const response = await axios.post(appsScriptWebAppUrl, metadataString, {
       headers: {
-        'Content-Type': 'application/json'
-      }
-    })
-      .then(response => {
-        console.log('Success:', response.data);
-
-        res.send(response.data);
-
-        fs.unlinkSync(req.file.path);
-      })
-      .catch(error => {
-        console.error('Error:', error);
-        res.send(JSON.parse({ "responseCode": "99", "responseMessage": error }))
-
-        fs.unlinkSync(req.file.path);
-      });
-
+        'Content-Type': 'application/json', // Opsional, tapi praktik yang baik
+      },
+      params: {
+        operation: "SETBERITAACARA",
+      },
+    });
+    res.send(response.data);
   } catch (error) {
-    console.error('Error:', error);
-    res.send(JSON.parse({ "responseCode": "99", "responseMessage": error }))
+
+    // Respons khusus untuk error kredensial
+    if (error.message === "11") {
+      return res.json({
+        "responseCode": "11",
+        "responseMessage": "Silahkan Login Ulang" // Gunakan error.message untuk pesan yang lebih baik
+      });
+    }
+
+    return res.json({
+      "responseCode": "99",
+      "responseMessage": error.message // Gunakan error.message untuk pesan yang lebih baik
+    });
   }
 });
 
+app.post('/edit_berita_acara', async (req, res) => {
 
-app.post('/edit_berita_acara', (req, res) => {
-  axios.post(appsScriptWebAppUrl + "?operation=EDITBERITAACARA", req.body, {
-    headers: {
-      'Content-Type': 'application/json'
-    }
-  })
-    .then(response => {
-      console.log('Success:', response.data);
-
-      res.send(response.data);
-
-    })
-    .catch(error => {
-      console.error('Error:', error);
-      res.send(JSON.parse({ "responseCode": "99", "responseMessage": error }))
+  try {
+    const response = await axios.post(appsScriptWebAppUrl, req.body, {
+      headers: {
+        'Content-Type': 'application/json', // Opsional, tapi praktik yang baik
+      },
+      params: {
+        operation: "EDITBERITAACARA",
+      },
     });
+    res.send(response.data);
+  } catch (error) {
+    res.json({
+      "responseCode": "99",
+      "responseMessage": error.message // Gunakan error.message untuk pesan yang lebih baik
+    });
+  }
 });
 
 app.post('/del_berita_acara', async (req, res) => {
-  const { fileId } = req.body.fileId;
+  try {
+    const fileId = req.body['fileId'];
+    if (!fileId) {
+      res.json({
+        "responseCode": "99",
+        "responseMessage": "File Id Tidak Ditemukan" // Gunakan error.message untuk pesan yang lebih baik
+      });
+    }
 
-  if (!fileId) {
-    res.send(JSON.parse({ "responseCode": "99", "responseMessage": "File Tidak Ditemukan" }))
+    const del = await deleteFileFromDrive(fileId);
+    if (del) {
+      const response = await axios.post(appsScriptWebAppUrl, req.body, {
+        headers: {
+          'Content-Type': 'application/json', // Opsional, tapi praktik yang baik
+        },
+        params: {
+          operation: "DELBERITAACARA",
+        },
+      });
+      return res.send(response.data);
+    } else {
+      return res.json({
+        "responseCode": "99",
+        "responseMessage": "Gagal Menghapus File" // Gunakan error.message untuk pesan yang lebih baik
+      });
+    }
+  } catch (error) {
+    // Respons khusus untuk error kredensial
+    if (error.message === "11") {
+      return res.json({
+        "responseCode": "11",
+        "responseMessage": "Silahkan Login Ulang" // Gunakan error.message untuk pesan yang lebih baik
+      });
+    }
+
+    return res.json({
+      "responseCode": "99",
+      "responseMessage": error.message // Gunakan error.message untuk pesan yang lebih baik
+    });
+  }
+});
+
+
+//========================================
+//            FOTO
+//========================================
+
+app.get('/get_foto_prop', async (req, res) => {
+  try {
+    const response = await axios.get(appsScriptWebAppUrl, {
+      // Data yang dikirim sebagai query string (?nama=Alice)
+      params: {
+        operation: "GETFOTOPROP",
+      },
+    });
+    res.send(response.data);
+  } catch (error) {
+    res.json({
+      "responseCode": "99",
+      "responseMessage": error.message // Gunakan error.message untuk pesan yang lebih baik
+    });
+  }
+});
+
+// app.get('/get_foto', async (req, res) => {
+//   try {
+//     const response = await axios.get(appsScriptWebAppUrl, {
+//       // Data yang dikirim sebagai query string (?nama=Alice)
+//       params: {
+//         operation: "GETFOTO",
+//       },
+//     });
+//     res.send(response.data);
+//   } catch (error){
+//     res.json({
+//       "responseCode": "99",
+//       "responseMessage": error.message // Gunakan error.message untuk pesan yang lebih baik
+//     });
+//   }
+// });
+
+app.post('/get_foto', async (req, res) => {
+  try {
+    const response = await axios.post(appsScriptWebAppUrl, req.body, {
+      headers: {
+        'Content-Type': 'application/json', // Opsional, tapi praktik yang baik
+      },
+      params: {
+        operation: "GETFOTO",
+      },
+    });
+    res.send(response.data);
+  } catch (error) {
+    res.json({
+      "responseCode": "99",
+      "responseMessage": error.message // Gunakan error.message untuk pesan yang lebih baik
+    });
+
+  }
+});
+
+app.post('/set_foto', upload.array('files'), async (req, res) => {
+
+  if (!req.files || req.files.length === 0) {
+    return res.status(400).send('Tidak ada file yang diunggah.');
   }
 
   try {
+    const metadataString = req.body.metadata;
 
-    var del = await deleteFileFromDrive(fileId);
-    if (del) {
-      axios.post(appsScriptWebAppUrl + "?operation=DELBERITAACARA", req.body, {
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      })
-        .then(response => {
-          console.log('Success:', response.data);
+    // 1. folder utama
+    const mainFolder = await findOrCreateFolder('FOTO');
+    const mainFolderId = mainFolder.id;
 
-          res.send(response.data);
+    // 2. lokasi
+    const lokasiFolder = await findOrCreateFolder(metadataString.lokasi, mainFolderId);
+    const lokasiFolderId = lokasiFolder.id;
 
-        })
-        .catch(error => {
-          console.error('Error:', error);
-          res.send(JSON.parse({ "responseCode": "99", "responseMessage": error }))
-        });
+    // 3. jenis
+    const jenisFotoFolder = await findOrCreateFolder(metadataString.jenisFoto, lokasiFolderId);
+    const jenisFotoFolderid = jenisFotoFolder.id;
+
+    var folderid = jenisFotoFolderid;
+
+    if (metadataString.subJenisFoto != "") {
+      // 4. sub jenis
+      const subJenisFolder = await findOrCreateFolder(metadataString.subJenisFoto, jenisFotoFolderid);
+      const subJenisFolderId = subJenisFolder.id;
+
+      folderid = subJenisFolderId;
+
+      if (metadataString.subSubJenisFoto != "") {
+        // 5. sub sub jenis
+        const subSubJenisFolder = await findOrCreateFolder(metadataString.subSubJenisFoto, subJenisFolderId);
+        const subSubJenisFolderId = subSubJenisFolder.id;
+
+        folderid = subSubJenisFolderId;
+      }
     }
-  } catch (e) {
-    console.error('Error:', error);
-    res.send(JSON.parse({ "responseCode": "99", "responseMessage": error }))
+
+    const driveResponse = await uploadFilesToDrive(req.files, folderid, metadataString.namaFile);
+
+    req.files.forEach(file => fs.unlinkSync(file.path));
+
+    const uploadedFilesData = driveResponse.map((res, index) => ({
+      id: res.id,
+      // name: req.files[index].originalname, // Mengambil nama asli dari req.files
+      name: res.name, // Mengambil nama asli dari req.files
+      link: res.webViewLink
+    }));
+
+    const id = uploadedFilesData.map(function (item) {
+      return item['id'];
+    });
+
+    const name = uploadedFilesData.map(function (item) {
+      return item['name'];
+    });
+
+    const link = uploadedFilesData.map(function (item) {
+      return item['link'];
+    });
+
+    metadataString.namaFile = name.toString();
+    metadataString.fileId = id.toString();
+    metadataString.fileLink = link.toString();
+
+    //------
+    //------
+    const response = await axios.post(appsScriptWebAppUrl, metadataString, {
+      headers: {
+        'Content-Type': 'application/json', // Opsional, tapi praktik yang baik
+      },
+      params: {
+        operation: "SETFOTO",
+      },
+    });
+    res.send(response.data);
+  } catch (error) {
+    // Respons khusus untuk error kredensial
+    if (error.message === "11") {
+      return res.json({
+        "responseCode": "11",
+        "responseMessage": "Silahkan Login Ulang" // Gunakan error.message untuk pesan yang lebih baik
+      });
+    }
+
+    return res.json({
+      "responseCode": "99",
+      "responseMessage": error.message // Gunakan error.message untuk pesan yang lebih baik
+    });
+  }
+});
+
+
+app.post('/del_foto', async (req, res) => {
+
+  try {
+    const fileIds = req.body['fileIds'];
+
+    if (!fileIds || !Array.isArray(fileIds) || fileIds.length === 0) {
+      res.send(JSON.parse({ "responseCode": "99", "responseMessage": "File Tidak Ditemukan" }))
+    }
+
+    const isSuccess = await deleteMultipleFilesFromDrive(fileIds);
+    if (isSuccess) {
+      req.body.fileIds = fileIds.toString();
+      const response = await axios.post(appsScriptWebAppUrl, req.body, {
+        headers: {
+          'Content-Type': 'application/json', // Opsional, tapi praktik yang baik
+        },
+        params: {
+          operation: "DELFOTO",
+        },
+      });
+      res.send(response.data);
+    } else {
+      res.json({
+        "responseCode": "99",
+        "responseMessage": "Gagal Menghapus File" // Gunakan error.message untuk pesan yang lebih baik
+      });
+    }
+  } catch (error) {
+    // Respons khusus untuk error kredensial
+    if (error.message === "11") {
+      return res.json({
+        "responseCode": "11",
+        "responseMessage": "Silahkan Login Ulang" // Gunakan error.message untuk pesan yang lebih baik
+      });
+    }
+
+    return res.json({
+      "responseCode": "99",
+      "responseMessage": error.message // Gunakan error.message untuk pesan yang lebih baik
+    });
+  }
+});
+
+
+//========================================
+//            VIDEO
+//========================================
+// app.get('/get_video', async (req, res) => {
+//   try {
+//     const response = await axios.get(appsScriptWebAppUrl, {
+//       // Data yang dikirim sebagai query string (?nama=Alice)
+//       params: {
+//         operation: "GETVIDEO",
+//       },
+//     });
+//     res.send(response.data);
+//   } catch (error){
+//     res.json({
+//       "responseCode": "99",
+//       "responseMessage": error.message // Gunakan error.message untuk pesan yang lebih baik
+//     });
+//   }
+// });
+app.post('/get_video', async (req, res) => {
+  try {
+    const response = await axios.post(appsScriptWebAppUrl, req.body, {
+      headers: {
+        'Content-Type': 'application/json', // Opsional, tapi praktik yang baik
+      },
+      params: {
+        operation: "GETVIDEO",
+      },
+    });
+    res.send(response.data);
+  } catch (error) {
+    res.json({
+      "responseCode": "99",
+      "responseMessage": error.message // Gunakan error.message untuk pesan yang lebih baik
+    });
+
+  }
+});
+
+app.post('/set_video', upload.array('files'), async (req, res) => {
+
+  if (!req.files || req.files.length === 0) {
+    return res.status(400).send('Tidak ada file yang diunggah.');
+  }
+
+  try {
+    const metadataString = req.body.metadata;
+
+    // 1. folder utama
+    const mainFolder = await findOrCreateFolder('VIDEO');
+    const mainFolderId = mainFolder.id;
+
+    // 2. lokasi
+    const lokasiFolder = await findOrCreateFolder(metadataString.lokasi, mainFolderId);
+    const lokasiFolderId = lokasiFolder.id;
+
+    // 3. jenis
+    const jenisFotoFolder = await findOrCreateFolder(metadataString.jenisVideo, lokasiFolderId);
+    const jenisFotoFolderid = jenisFotoFolder.id;
+
+    var folderid = jenisFotoFolderid;
+
+    if (metadataString.sesi != "") {
+      // 4. sub jenis
+      const subJenisFolder = await findOrCreateFolder(metadataString.sesi, jenisFotoFolderid);
+      const subJenisFolderId = subJenisFolder.id;
+
+      folderid = subJenisFolderId;
+    }
+
+    const driveResponse = await uploadFilesToDrive(req.files, folderid, metadataString.namaFile);
+
+    req.files.forEach(file => fs.unlinkSync(file.path));
+
+    const uploadedFilesData = driveResponse.map(res => ({
+      id: res.id,
+      name: res.name, // <<-- Nama file dikembalikan dari respons Google Drive
+      link: res.webViewLink
+    }));
+
+    const id = uploadedFilesData.map(function (item) {
+      return item['id'];
+    });
+
+    const name = uploadedFilesData.map(function (item) {
+      return item['name'];
+    });
+
+    const link = uploadedFilesData.map(function (item) {
+      return item['link'];
+    });
+
+    metadataString.namaFile = name.toString();
+    metadataString.fileId = id.toString();
+    metadataString.fileLink = link.toString();
+
+    //------
+    const response = await axios.post(appsScriptWebAppUrl, metadataString, {
+      headers: {
+        'Content-Type': 'application/json', // Opsional, tapi praktik yang baik
+      },
+      params: {
+        operation: "SETVIDEO",
+      },
+    });
+    res.send(response.data);
+
+  } catch (error) {
+    // Respons khusus untuk error kredensial
+    if (error.message === "11") {
+      return res.json({
+        "responseCode": "11",
+        "responseMessage": "Silahkan Login Ulang" // Gunakan error.message untuk pesan yang lebih baik
+      });
+    }
+
+    return res.json({
+      "responseCode": "99",
+      "responseMessage": error.message // Gunakan error.message untuk pesan yang lebih baik
+    });
+  }
+});
+
+
+app.post('/del_video', async (req, res) => {
+  try {
+    const fileIds = req.body['fileIds'];
+
+    if (!fileIds || !Array.isArray(fileIds) || fileIds.length === 0) {
+      res.send(JSON.parse({ "responseCode": "99", "responseMessage": "File Tidak Ditemukan" }))
+    }
+
+    const isSuccess = await deleteMultipleFilesFromDrive(fileIds);
+    if (isSuccess) {
+      req.body.fileIds = fileIds.toString();
+      const response = await axios.post(appsScriptWebAppUrl, req.body, {
+        headers: {
+          'Content-Type': 'application/json', // Opsional, tapi praktik yang baik
+        },
+        params: {
+          operation: "DELETEVIDEO",
+        },
+      });
+      res.send(response.data);
+    } else {
+      res.json({
+        "responseCode": "99",
+        "responseMessage": "Gagal Menghapus File" // Gunakan error.message untuk pesan yang lebih baik
+      });
+    }
+  } catch (error) {
+    // Respons khusus untuk error kredensial
+    if (error.message === "11") {
+      return res.json({
+        "responseCode": "11",
+        "responseMessage": "Silahkan Login Ulang" // Gunakan error.message untuk pesan yang lebih baik
+      });
+    }
+
+    return res.json({
+      "responseCode": "99",
+      "responseMessage": error.message // Gunakan error.message untuk pesan yang lebih baik
+    });
   }
 });
 //========================================
